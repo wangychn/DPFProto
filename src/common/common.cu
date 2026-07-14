@@ -530,6 +530,10 @@ void open_files(BenchmarkOptions &options, std::vector<int> &fds)
     for (i = 0; i < options.ndev; i++)
     {
         int fd = open(options.devname[i], oflag, 0644);
+        if (fd < 0 && errno == EINVAL && (oflag & O_DIRECT))
+        {
+            fd = open(options.devname[i], oflag & ~O_DIRECT, 0644);
+        }
         if (fd < 0)
         {
             std::cerr << "failed to open file " << options.file << std::endl;

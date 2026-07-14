@@ -36,7 +36,7 @@ add_compile_definitions(__is_convertible=__bam_is_convertible)
 
 project("gdsdb" CUDA CXX)
 
-set(CMAKE_CUDA_ARCHITECTURES native)
+set(CMAKE_CUDA_ARCHITECTURES 86)
 set(CMAKE_CUDA_STANDARD 20)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 23)
@@ -929,7 +929,7 @@ target_link_libraries(bam_fused_q5dim PRIVATE cudart)
 set_target_properties(bam_fused_q5dim PROPERTIES
     CUDA_STANDARD 17
     CUDA_STANDARD_REQUIRED ON
-    CUDA_ARCHITECTURES "80;90"
+    CUDA_ARCHITECTURES "80;86;90"
     CUDA_SEPARABLE_COMPILATION ON
 )
 target_compile_options(bam_fused_q5dim PRIVATE

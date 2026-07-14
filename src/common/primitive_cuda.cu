@@ -55,7 +55,19 @@ inline void mb_cuda_set_context(CUcontext ctx)
 inline void *mb_cuda_alloc(size_t size)
 {
     void *dev_ptr = nullptr;
-    checkCudaErrors(cudaMalloc(&dev_ptr, size));
+    size_t free_mem = 0;
+    size_t total_mem = 0;
+    cudaMemGetInfo(&free_mem, &total_mem);
+    fprintf(stderr, "[cuda_alloc] request_mb=%.2f free_mb=%.2f total_mb=%.2f\n",
+            size / 1048576.0, free_mem / 1048576.0, total_mem / 1048576.0);
+    cudaError_t err = cudaMalloc(&dev_ptr, size);
+    if (err != cudaSuccess) {
+        cudaMemGetInfo(&free_mem, &total_mem);
+        fprintf(stderr, "[cuda_alloc_failed] request_mb=%.2f free_mb=%.2f total_mb=%.2f error=%s\n",
+                size / 1048576.0, free_mem / 1048576.0, total_mem / 1048576.0,
+                cudaGetErrorString(err));
+    }
+    checkCudaErrors(err);
     checkCudaErrors(cudaMemset(dev_ptr, 0x00, size));
     return dev_ptr;
 }
