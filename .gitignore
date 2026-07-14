@@ -5,3 +5,6 @@ build-old/
 debug-old/
 answers/
 ssb-queries/
+
+cufile.log
+logs/
