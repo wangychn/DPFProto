@@ -4196,6 +4196,10 @@ static void tpch_worker_alloc(
         }
         size_t buf_size = max_ppw * page_size;
         for (int b = 0; b < 2; b++) {
+            std::cerr << "[Q5 alloc] function=tpch_worker_alloc worker=" << t
+                      << " staging_buf=" << b
+                      << " request_mb=" << (double)buf_size / (1024 * 1024)
+                      << std::endl;
             w.staging_buf[b] = mb_cuda_alloc(buf_size);
             GDS_CHECK(cuFileBufRegister(w.staging_buf[b], buf_size, 0));
         }
@@ -4956,8 +4960,12 @@ BenchmarkResult tpch_q5(BenchmarkOptions &options) {
     // ORDERS needs 3 (1 INT32 + 2 INT64), LINEITEM needs 4 (2 INT32 + 2 INT64)
     static constexpr size_t Q5_NUM_COL_BUFS = 4;
     void *tile_col_bufs[Q5_NUM_COL_BUFS];
-    for (size_t i = 0; i < Q5_NUM_COL_BUFS; i++)
+    for (size_t i = 0; i < Q5_NUM_COL_BUFS; i++) {
+        std::cerr << "[Q5 alloc] function=tpch_q5 tile_col_buf=" << i
+                  << " request_mb=" << (double)(staging_pages * page_size) / (1024 * 1024)
+                  << std::endl;
         tile_col_bufs[i] = mb_cuda_alloc(staging_pages * page_size);
+    }
 
     uint64_t *d_o_orderdate_flat = nullptr;
     uint64_t *d_o_orderkey_flat = nullptr, *d_o_custkey_flat = nullptr;

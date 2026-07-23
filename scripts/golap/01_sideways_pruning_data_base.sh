@@ -1,5 +1,7 @@
 #!/bin/bash
-set -eu # エラー時に停止
+# upstream script with configurable DATA_BASE
+# replaces fixed /export data paths
+set -eu # stop on error
 
 SCRIPT_START=$(date +%s)
 step_time() {
