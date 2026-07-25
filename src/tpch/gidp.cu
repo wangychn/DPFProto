@@ -24,6 +24,7 @@
 #include <span>
 #include <numeric>
 #include <algorithm>
+#include <cstdlib>
 //#include <nvcomp.h>
 #include <nvcomp/snappy.h>
 #include <nvcomp/lz4.h>
@@ -36,6 +37,20 @@
 #include <cub/device/device_merge_sort.cuh>
 
 constexpr size_t MAX_GDS_DEVICES = 64;
+
+static size_t env_size(const char *name, size_t fallback)
+{
+    const char *value = std::getenv(name);
+    if (!value || !*value) return fallback;
+    char *end = nullptr;
+    size_t parsed = std::strtoull(value, &end, 10);
+    return *end || parsed == 0 ? fallback : parsed;
+}
+
+static uint64_t golap_gpu_budget_bytes()
+{
+    return env_size("GOLAP_GPU_MEM_GB", 40) * 1024ULL * 1024ULL * 1024ULL;
+}
 
 // Collect unique compression method names from FieldPageInfo vectors.
 // Returns e.g. "NONE", "SNAPPY", "SNAPPY+LZ4" (sorted, deduplicated).
@@ -4679,7 +4694,9 @@ BenchmarkResult tpch_q5(BenchmarkOptions &options) {
     // ── Tile execution constants ──
     constexpr size_t Q5_TILE_PAGES_MAX = 1024;
     const size_t o_npages_i32 = fi_o_orderdate.npages;
-    const size_t Q5_TILE_PAGES_O = o_npages_i32;  // all ORDERS in one tile
+    const size_t q5_tile_pages_cap = std::min(
+        env_size("Q5_TILE_PAGES", Q5_TILE_PAGES_MAX), Q5_TILE_PAGES_MAX);
+    const size_t Q5_TILE_PAGES_O = std::min(o_npages_i32, q5_tile_pages_cap);
     const size_t o_npages_i64 = fi_o_orderkey.npages;
     const size_t l_npages_i32 = fi_l_extprice.npages;
     const size_t l_npages_i64 = fi_l_orderkey.npages;
@@ -4722,7 +4739,7 @@ BenchmarkResult tpch_q5(BenchmarkOptions &options) {
     //   Case 2: T*i64_r > o_staging → staging_pages ≈ T*i64_r, all costs scale
     size_t Q5_TILE_PAGES;
     {
-        constexpr uint64_t GPU_MEM_BUDGET = 40ULL * 1024 * 1024 * 1024;
+        const uint64_t GPU_MEM_BUDGET = golap_gpu_budget_bytes();
         uint64_t fixed_bytes = 256;
         fixed_bytes += (uint64_t)(fi_s_suppkey.npages + fi_s_nationkey.npages) * page_size;
         fixed_bytes += (uint64_t)nrecs_supplier * 16;
@@ -4761,7 +4778,7 @@ BenchmarkResult tpch_q5(BenchmarkOptions &options) {
         } else {
             T = 1;
         }
-        Q5_TILE_PAGES = std::min(Q5_TILE_PAGES_MAX, std::max((size_t)1, T));
+        Q5_TILE_PAGES = std::min(q5_tile_pages_cap, std::max((size_t)1, T));
     }
     Q5_TILE_PAGES = std::min(Q5_TILE_PAGES, l_npages_i32);  // never exceed actual column
     size_t l_num_tiles = (l_npages_i32 + Q5_TILE_PAGES - 1) / Q5_TILE_PAGES;
@@ -4786,6 +4803,8 @@ BenchmarkResult tpch_q5(BenchmarkOptions &options) {
     size_t staging_pages = std::max({Q5_TILE_PAGES_O, Q5_TILE_PAGES,
                                       o_i64_tile_npages_max,
                                       l_i64_tile_npages_max});
+    std::cout << "[Q5] gpu_budget_gb=" << (golap_gpu_budget_bytes() >> 30)
+              << " tile_pages=" << q5_tile_pages_cap << std::endl;
     if (tile_nrows_max_o == 0) tile_nrows_max_o = 1;
     if (tile_nrows_max_l == 0) tile_nrows_max_l = 1;
     if (o_i64_nrows_max == 0) o_i64_nrows_max = 1;
@@ -4993,7 +5012,7 @@ BenchmarkResult tpch_q5(BenchmarkOptions &options) {
     size_t gpu_free_before_workers = 0;
     cudaMemGetInfo(&gpu_free_before_workers, &gpu_total_dummy);
     size_t non_staging_bytes = gpu_free_start - gpu_free_before_workers;
-    static constexpr size_t GPU_MEM_BUDGET = 40ULL * 1024 * 1024 * 1024;
+    const size_t GPU_MEM_BUDGET = golap_gpu_budget_bytes();
     size_t min_ppw = (staging_pages + nthreads - 1) / nthreads;
     size_t max_ppw = min_ppw;
     if (GPU_MEM_BUDGET > non_staging_bytes) {
@@ -5986,7 +6005,9 @@ BenchmarkResult tpch_q3(BenchmarkOptions &options) {
     // ── Tile execution constants ──
     constexpr size_t Q3_TILE_PAGES_MAX = 1024;
     const size_t o_npages_i32 = fi_o_orderdate.npages;
-    const size_t Q3_TILE_PAGES_O = o_npages_i32;  // all ORDERS in one tile
+    const size_t q3_tile_pages_cap = std::min(
+        env_size("Q3_TILE_PAGES", Q3_TILE_PAGES_MAX), Q3_TILE_PAGES_MAX);
+    const size_t Q3_TILE_PAGES_O = std::min(o_npages_i32, q3_tile_pages_cap);
     const size_t l_npages_i32 = fi_l_shipdate.npages;
     const size_t o_npages_i64 = fi_o_orderkey.npages;
     const size_t l_npages_i64 = fi_l_orderkey.npages;
@@ -6047,7 +6068,7 @@ BenchmarkResult tpch_q3(BenchmarkOptions &options) {
     // ── Budget-based Q3_TILE_PAGES (40 GiB cap) ──
     size_t Q3_TILE_PAGES;
     {
-        constexpr uint64_t GPU_MEM_BUDGET = 40ULL * 1024 * 1024 * 1024;
+        const uint64_t GPU_MEM_BUDGET = golap_gpu_budget_bytes();
         uint64_t fixed_bytes = 0;
         // CUSTOMER flat + hash set
         fixed_bytes += (uint64_t)nrecs_customer * 8;
@@ -6097,7 +6118,7 @@ BenchmarkResult tpch_q3(BenchmarkOptions &options) {
         } else {
             T = 1;
         }
-        Q3_TILE_PAGES = std::min(Q3_TILE_PAGES_MAX, std::max((size_t)1, T));
+        Q3_TILE_PAGES = std::min(q3_tile_pages_cap, std::max((size_t)1, T));
     }
     Q3_TILE_PAGES = std::min(Q3_TILE_PAGES, l_npages_i32);  // never exceed actual column
     size_t l_num_tiles = (l_npages_i32 + Q3_TILE_PAGES - 1) / Q3_TILE_PAGES;
@@ -6123,6 +6144,8 @@ BenchmarkResult tpch_q3(BenchmarkOptions &options) {
     size_t staging_pages = std::max({Q3_TILE_PAGES_O,
                                       o_i64_tile_npages_max,
                                       l_i64_tile_npages_max});
+    std::cout << "[Q3] gpu_budget_gb=" << (golap_gpu_budget_bytes() >> 30)
+              << " tile_pages=" << q3_tile_pages_cap << std::endl;
     if (tile_nrows_max_o == 0) tile_nrows_max_o = 1;
     if (tile_nrows_max_l == 0) tile_nrows_max_l = 1;
     if (o_i64_nrows_max == 0) o_i64_nrows_max = 1;
@@ -6399,7 +6422,7 @@ BenchmarkResult tpch_q3(BenchmarkOptions &options) {
     while (orders_ht_cap < est_orders_qual * 2) orders_ht_cap <<= 1;
 
     {
-        static constexpr uint64_t GPU_MEM_BUDGET_Q3 = 40ULL * 1024 * 1024 * 1024;
+        const uint64_t GPU_MEM_BUDGET_Q3 = golap_gpu_budget_bytes();
         size_t gpu_free_now = 0;
         cudaMemGetInfo(&gpu_free_now, &gpu_total_dummy);
         uint64_t app_used = gpu_free_start - gpu_free_now;
@@ -6564,7 +6587,7 @@ BenchmarkResult tpch_q3(BenchmarkOptions &options) {
 
     // Phase 2: allocate per-loader io_buf with dynamic sizing (Rule 4: gpu_mem ≤ 40 GiB)
     {
-        static constexpr size_t GPU_MEM_BUDGET = 40ULL * 1024 * 1024 * 1024;
+        const size_t GPU_MEM_BUDGET = golap_gpu_budget_bytes();
         size_t gpu_free_before_loaders = 0;
         cudaMemGetInfo(&gpu_free_before_loaders, &gpu_total_dummy);
         size_t non_loader_bytes = gpu_free_start - gpu_free_before_loaders;

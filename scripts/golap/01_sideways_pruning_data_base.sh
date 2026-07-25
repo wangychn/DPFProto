@@ -372,7 +372,7 @@ do
   if [ -e "${DSTDIR}" ] || [ -L "${DSTDIR}" ]; then
     echo Skip creating ${DSTDIR}
   else
-    ln -s ${SRCDIR} ${DSTDIR}
+    ln -sr "${SRCDIR}" "${DSTDIR}"
   fi
 done
 

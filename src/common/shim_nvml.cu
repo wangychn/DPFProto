@@ -3,6 +3,7 @@
 #include <unistd.h>
 
 #include <cstdio>
+#include <cstdlib>
 
 #include <nvml.h>
 
@@ -10,6 +11,8 @@ namespace nvml
 {
     namespace
     {
+        bool initialized = false;
+
         void check(nvmlReturn_t result)
         {
             if (result != NVML_SUCCESS)
@@ -22,16 +25,24 @@ namespace nvml
 
     void init()
     {
-        check(nvmlInit());
+        auto result = nvmlInit();
+        if (result != NVML_SUCCESS && std::getenv("GOLAP_ALLOW_NVML_FAILURE"))
+        {
+            fprintf(stderr, "NVML disabled: %s\n", nvmlErrorString(result));
+            return;
+        }
+        check(result);
+        initialized = true;
     }
 
     void shutdown()
     {
-        check(nvmlShutdown());
+        if (initialized) check(nvmlShutdown());
     }
 
     unsigned int device_get_count()
     {
+        if (!initialized) return 0;
         unsigned int count = 0;
         check(nvmlDeviceGetCount(&count));
         return count;
